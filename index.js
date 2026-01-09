@@ -12,6 +12,6 @@ app.use(express.json())// to get req.body we need this middleware
 app.use('/api/auth',require('./routes/auth'))
 
 
-app.listen(port, () => {
+app.listen(process.env.PORT, () => {
   console.log(`INoteBook backend listening on port ${port}`)
 })

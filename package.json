@@ -1,16 +1,18 @@
 {
-  "name": "inotebook-backend",
+  "name": "shopster-backend",
   "version": "1.0.0",
-  "description": "iNotebook - Your notebook on the cloud",
+  "description": "Shopster-Anything to shop",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-validator": "^7.3.0",
     "jsonwebtoken": "^9.0.2",
