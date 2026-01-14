@@ -10,21 +10,21 @@ const JWT_SECRET = "MyNameisJatin";
 // ROUTE 1: Create a User using: POST "/api/auth/createuser" No Login required
 router.post(
   "/createuser",
-  [
-    body("name", "Enter a valid name").isLength({ min: 5 }),
-    body("email", "Enter a valid email").isEmail(),
-    body("password", "Password must be atleast 5 characters").isLength({
-      min: 5,
-    }),
-  ],
+  // [
+  //   body("name", "Enter a valid name").isLength({ min: 5 }),
+  //   body("email", "Enter a valid email").isEmail(),
+  //   body("password", "Password must be atleast 5 characters").isLength({
+  //     min: 5,
+  //   }),
+  // ],
   async (req, res) => {
     let  success = false;
     // if there are errors return bad request and the errors
-    const result = validationResult(req);
+    // const result = validationResult(req);
 
-    if (!result.isEmpty()) {
-      return res.status(400).json({ success,errors: result.array() });
-    }
+    // if (!result.isEmpty()) {
+    //   return res.status(400).json({ success,errors: result.array() });
+    // }
     //Check whether the user with this email exists already
     try {
       let user = await User.findOne({ email: req.body.email });
@@ -72,10 +72,10 @@ router.post(
 //ROUTE 2: Authenticate a User using: POST "/api/auth/login" No login required
 router.post(
   "/login",
-  [
-    body("email", "Enter a valid email").isEmail(),
-    body("password", "Password cannot be blank").exists(), //check if the password is not empty
-  ],
+  // [
+  //   body("email", "Enter a valid email").isEmail(),
+  //   body("password", "Password cannot be blank").exists(), //check if the password is not empty
+  // ],
   async (req, res) => {
     // if there are errors return bad request and the errors
     let success = false;
