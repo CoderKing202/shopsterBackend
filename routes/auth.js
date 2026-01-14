@@ -130,3 +130,42 @@ router.post("/getuser", fetchuser,async (req, res) => {
   
 });
 module.exports = router;
+
+// ROUTE 4: Add item to cart using: POST "/api/auth/addCartItem" Login required
+router.post("/addCartItem", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const item = req.body; // product object sent from frontend
+
+    const user = await User.findById(userId);
+
+    user.cartItems.push(item);
+    await user.save();
+
+    res.json({ success: true, cartItems: user.cartItems });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+// ROUTE 5: Remove item from cart using: POST "/api/auth/removeCartItem" Login required
+router.post("/removeCartItem", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.body; // product id
+
+    const user = await User.findById(userId);
+
+    user.cartItems = user.cartItems.filter(
+      (item) => item.id !== id
+    );
+
+    await user.save();
+
+    res.json({ success: true, cartItems: user.cartItems });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
