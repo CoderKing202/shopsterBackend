@@ -190,3 +190,55 @@ router.get("/getCartItems", fetchuser, async (req, res) => {
     res.status(500).send("Internal Server Error");
   }
 });
+
+// ROUTE 7 to increment quantity of the product 
+router.post("/incrementQuantity", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.body; // product id
+    
+    const user = await User.findById(userId);
+
+    const item = user.cartItems.find(item => item.id === id);
+    console.log(item.id)
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Item not found in cart" });
+    }
+      user.markModified("cartItems"); 
+    item.quantity += 1;
+    // console.log(user)
+    await user.save();
+
+    res.json({ success: true, cartItems: user.cartItems });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+// Route 8 to decrement quantity of the product  
+router.post("/decrementQuantity", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.body; // product id
+
+    const user = await User.findById(userId);
+
+    const item = user.cartItems.find(item => item.id === id);
+    console.log(item.id)
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Item not found in cart" });
+    }
+
+    if (item.quantity > 1) {
+      item.quantity -= 1;
+    }
+   user.markModified("cartItems");
+    await user.save();
+
+    res.json({ success: true, cartItems: user.cartItems });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
