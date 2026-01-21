@@ -118,7 +118,7 @@ router.post(
 
 
 //ROUTE 3: Get loggedin User Details using: POST "/api/auth/getuser" Login required
-router.post("/getuser", fetchuser,async (req, res) => {
+router.get("/getuser", fetchuser,async (req, res) => {
   try {
     userId = req.user.id;
     const user = await User.findById(userId).select("-password");
@@ -237,6 +237,45 @@ router.post("/decrementQuantity", fetchuser, async (req, res) => {
     await user.save();
 
     res.json({ success: true, cartItems: user.cartItems });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+// ROUTE 9 Update the User info
+router.put("/updateProfile", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, email, password } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, msg: "User not found" });
+    }
+
+    // Update name if provided
+    if (name) {
+      user.name = name;
+    }
+
+    // Update email if provided
+    if (email) {
+      user.email = email;
+    }
+
+    // Update password if provided
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password, salt);
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      msg: "Profile updated successfully"
+    });
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
