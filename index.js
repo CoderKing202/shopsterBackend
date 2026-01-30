@@ -13,5 +13,5 @@ app.use('/api/auth',require('./routes/auth'))
 
 
 app.listen(process.env.PORT, () => {
-  console.log(`INoteBook backend listening on port ${port}`)
+  console.log(`Shopster backend listening on port ${port}`)
 })

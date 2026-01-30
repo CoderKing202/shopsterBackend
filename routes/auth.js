@@ -8,65 +8,67 @@ const fetchuser = require("../middleware/fetchUser")
 
 const JWT_SECRET = "MyNameisJatin";
 // ROUTE 1: Create a User using: POST "/api/auth/createuser" No Login required
-router.post(
-  "/createuser",
-  // [
-  //   body("name", "Enter a valid name").isLength({ min: 5 }),
-  //   body("email", "Enter a valid email").isEmail(),
-  //   body("password", "Password must be atleast 5 characters").isLength({
-  //     min: 5,
-  //   }),
-  // ],
-  async (req, res) => {
-    let  success = false;
-    // if there are errors return bad request and the errors
-    // const result = validationResult(req);
+router.post("/createuser", async (req, res) => {
+  let success = false;
 
-    // if (!result.isEmpty()) {
-    //   return res.status(400).json({ success,errors: result.array() });
-    // }
-    //Check whether the user with this email exists already
-    try {
-      let user = await User.findOne({ email: req.body.email });
-      if (user) {
-        return res
-          .status(400)
-          .json({ success,error: "Sorry a user with this email already exists" });
-      }
-      const salt = await bcrypt.genSalt(10);
-      const secPass = await bcrypt.hash(req.body.password, salt);
-      // Create a new user
-      user = await User.create({
-        name: req.body.name,
-        email: req.body.email,
-        password: secPass,
+  try {
+    const { name, email, password, phoneNumber } = req.body;
+
+    /* ---------- CHECK EMAIL ---------- */
+    let userByEmail = await User.findOne({ email });
+    if (userByEmail) {
+      return res.status(400).json({
+        success,
+        error: "Sorry, a user with this email already exists",
       });
-      const data = {
-        user: {
-          id: user.id,
-        },
-      };
-      // I think this is the structure used to
-      // feed the data to the token making(who knows)
-      const authtoken = jwt.sign(data, JWT_SECRET); //It is a synch method
-      console.log(authtoken);
-      success = true
-      res.json({ success,authtoken });
-    } catch (error) {
-      //catch errors
-      console.error(error.message);
-      res.status(500).send("Internal Server Error");
     }
 
-    // .then(user=> res.json(user))
-    // .catch(err=>{console.log(err)
-    // res.json({error:"Plaese enter a unique value for email",message:err.message})})
-    // const user = User(req.body)
-    // user.save()
-    // console.log(req.body)
-    // res.send(req.body)
+    /* ---------- CHECK PHONE NUMBER ---------- */
+    let userByPhone = await User.findOne({ phoneNumber });
+    if (userByPhone) {
+      return res.status(400).json({
+        success,
+        error: "Sorry, a user with this phone number already exists",
+      });
+    }
+
+    /* ---------- VALIDATE PHONE NUMBER FORMAT ---------- */
+    const phoneRegex = /^\+[1-9]\d{6,14}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({
+        success,
+        error: "Invalid phone number format",
+      });
+    }
+
+    /* ---------- HASH PASSWORD ---------- */
+    const salt = await bcrypt.genSalt(10);
+    const secPass = await bcrypt.hash(password, salt);
+
+    /* ---------- CREATE USER ---------- */
+    const user = await User.create({
+      name,
+      email,
+      password: secPass,
+      phoneNumber,
+    });
+
+    /* ---------- CREATE JWT ---------- */
+    const data = {
+      user: {
+        id: user.id,
+      },
+    };
+
+    const authtoken = jwt.sign(data, JWT_SECRET);
+
+    success = true;
+    res.json({ success, authtoken });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
   }
-);
+});
 
 
 //ROUTE 2: Authenticate a User using: POST "/api/auth/login" No login required
@@ -191,6 +193,30 @@ router.get("/getCartItems", fetchuser, async (req, res) => {
   }
 });
 
+// ROUTE 11: To reset cart of a logged in user
+router.post("/resetCartItems", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    user.cartItems = [];
+    await user.save();
+
+    res.json({
+      success: true,
+      cartItems: user.cartItems,
+    });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
 // ROUTE 7 to increment quantity of the product 
 router.post("/incrementQuantity", fetchuser, async (req, res) => {
   try {
@@ -243,28 +269,56 @@ router.post("/decrementQuantity", fetchuser, async (req, res) => {
   }
 });
 
-// ROUTE 9 Update the User info
+// ROUTE 9: Update the User info
 router.put("/updateProfile", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, email, password } = req.body;
+    const { name, email, password, phoneNumber } = req.body;
 
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ success: false, msg: "User not found" });
     }
 
-    // Update name if provided
+    /* ---------- UPDATE NAME ---------- */
     if (name) {
       user.name = name;
     }
 
-    // Update email if provided
+    /* ---------- UPDATE EMAIL ---------- */
     if (email) {
+      // Optional: prevent duplicate emails
+      const emailExists = await User.findOne({ email });
+      if (emailExists && emailExists._id.toString() !== userId) {
+        return res.json({ success: false, msg: "Email already in use" });
+      }
       user.email = email;
     }
 
-    // Update password if provided
+    /* ---------- UPDATE PHONE NUMBER ---------- */
+    if (phoneNumber) {
+      // Validate E.164 format (+<country><number>)
+      const phoneRegex = /^\+[1-9]\d{6,14}$/;
+      if (!phoneRegex.test(phoneNumber)) {
+        return res.json({
+          success: false,
+          msg: "Invalid phone number format",
+        });
+      }
+
+      // Prevent duplicate phone numbers
+      const phoneExists = await User.findOne({ phoneNumber });
+      if (phoneExists && phoneExists._id.toString() !== userId) {
+        return res.json({
+          success: false,
+          msg: "Phone number already in use",
+        });
+      }
+
+      user.phoneNumber = phoneNumber;
+    }
+
+    /* ---------- UPDATE PASSWORD ---------- */
     if (password) {
       const salt = await bcrypt.genSalt(10);
       user.password = await bcrypt.hash(password, salt);
@@ -274,8 +328,27 @@ router.put("/updateProfile", fetchuser, async (req, res) => {
 
     res.json({
       success: true,
-      msg: "Profile updated successfully"
+      msg: "Profile updated successfully",
     });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+// ROUTE 10: Add item order History using: POST "/api/auth/addorderproducts" Login required
+router.post("/addorderedproducts", fetchuser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log("user "+userId)
+    const {orderedProducts} = req.body; // product object sent from frontend
+    console.log(req.body)
+    const user = await User.findById(userId);
+
+    user.orderedProducts.push(...orderedProducts)
+    await user.save();
+
+    res.json({ success: true});
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
