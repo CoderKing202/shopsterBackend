@@ -4,7 +4,11 @@ const router = express.Router();
 const { body, validationResult } = require("express-validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const fetchuser = require("../middleware/fetchUser")
+const OTP = require("../models/otpSchema"); // adjust path if needed
+const fetchuser = require("../middleware/fetchUser");
+require("dotenv").config();
+// const sendOtpSMS = require("../utils/sendOtpSMS");
+const sendOtpEmail = require("../utils/sendOtpEmail");
 
 const JWT_SECRET = "MyNameisJatin";
 // ROUTE 1: Create a User using: POST "/api/auth/createuser" No Login required
@@ -12,7 +16,7 @@ router.post("/createuser", async (req, res) => {
   let success = false;
 
   try {
-    const { name, email, password, phoneNumber } = req.body;
+    const { name, email, password /*phoneNumber*/ } = req.body;
 
     /* ---------- CHECK EMAIL ---------- */
     let userByEmail = await User.findOne({ email });
@@ -24,22 +28,22 @@ router.post("/createuser", async (req, res) => {
     }
 
     /* ---------- CHECK PHONE NUMBER ---------- */
-    let userByPhone = await User.findOne({ phoneNumber });
-    if (userByPhone) {
-      return res.status(400).json({
-        success,
-        error: "Sorry, a user with this phone number already exists",
-      });
-    }
+    // let userByPhone = await User.findOne({ phoneNumber });
+    // if (userByPhone) {
+    //   return res.status(400).json({
+    //     success,
+    //     error: "Sorry, a user with this phone number already exists",
+    //   });
+    // }
 
-    /* ---------- VALIDATE PHONE NUMBER FORMAT ---------- */
-    const phoneRegex = /^\+[1-9]\d{6,14}$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      return res.status(400).json({
-        success,
-        error: "Invalid phone number format",
-      });
-    }
+    // /* ---------- VALIDATE PHONE NUMBER FORMAT ---------- */
+    // const phoneRegex = /^\+[1-9]\d{6,14}$/;
+    // if (!phoneRegex.test(phoneNumber)) {
+    //   return res.status(400).json({
+    //     success,
+    //     error: "Invalid phone number format",
+    //   });
+    // }
 
     /* ---------- HASH PASSWORD ---------- */
     const salt = await bcrypt.genSalt(10);
@@ -50,26 +54,26 @@ router.post("/createuser", async (req, res) => {
       name,
       email,
       password: secPass,
-      phoneNumber,
+      // phoneNumber,
     });
 
     /* ---------- CREATE JWT ---------- */
-    const data = {
-      user: {
-        id: user.id,
-      },
-    };
+    // const data = {
+    //   user: {
+    //     id: user.id,
+    //   },
+    // };
 
-    const authtoken = jwt.sign(data, JWT_SECRET);
+    // const authtoken = jwt.sign(data, JWT_SECRET);
 
-    success = true;
-    res.json({ success, authtoken });
+    // success = true;
+    // res.json({ success, authtoken });
+    tellPurpose("register", res, user);
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
   }
 });
-
 
 //ROUTE 2: Authenticate a User using: POST "/api/auth/login" No login required
 router.post(
@@ -81,14 +85,17 @@ router.post(
   async (req, res) => {
     // if there are errors return bad request and the errors
     let success = false;
-    
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
     const { email, password } = req.body;
+    console.log("-----");
+
     try {
       let user = await User.findOne({ email });
+      console.log(email);
       if (!user) {
         return res
           .status(400)
@@ -96,42 +103,40 @@ router.post(
       }
       const passwordCompare = await bcrypt.compare(password, user.password);
       if (!passwordCompare) {
-        success = false
-        return res
-          .status(400)
-          .json({ success,error: "Please try to login with correct credentials" });
+        success = false;
+        return res.status(400).json({
+          success,
+          error: "Please try to login with correct credentials",
+        });
       }
 
-      const payload = {
-        user: {
-          id: user.id,
-        },
-      };
-      const authtoken = jwt.sign(payload, JWT_SECRET);
-      success = true
-      res.json({ success,authtoken });
-
+      // const payload = {
+      //   user: {
+      //     id: user.id,
+      //   },
+      // };
+      // const authtoken = jwt.sign(payload, JWT_SECRET);
+      // success = true
+      // res.json({ success,authtoken });
+      tellPurpose("login", res, user);
     } catch (error) {
       console.error(error.message);
       res.status(500).send("Internal Server Error");
     }
-  }
+  },
 );
 
-
 //ROUTE 3: Get loggedin User Details using: POST "/api/auth/getuser" Login required
-router.get("/getuser", fetchuser,async (req, res) => {
+router.get("/getuser", fetchuser, async (req, res) => {
   try {
     userId = req.user.id;
     const user = await User.findById(userId).select("-password");
-    res.json(user)
+    res.json(user);
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
   }
-  
 });
-module.exports = router;
 
 // ROUTE 4: Add item to cart using: POST "/api/auth/addCartItem" Login required
 router.post("/addCartItem", fetchuser, async (req, res) => {
@@ -159,9 +164,7 @@ router.post("/removeCartItem", fetchuser, async (req, res) => {
 
     const user = await User.findById(userId);
 
-    user.cartItems = user.cartItems.filter(
-      (item) => item.id !== id
-    );
+    user.cartItems = user.cartItems.filter((item) => item.id !== id);
 
     await user.save();
 
@@ -180,7 +183,9 @@ router.get("/getCartItems", fetchuser, async (req, res) => {
     const user = await User.findById(userId).select("cartItems");
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     res.json({
@@ -201,7 +206,9 @@ router.post("/resetCartItems", fetchuser, async (req, res) => {
     const user = await User.findById(userId);
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     user.cartItems = [];
@@ -217,20 +224,22 @@ router.post("/resetCartItems", fetchuser, async (req, res) => {
   }
 });
 
-// ROUTE 7 to increment quantity of the product 
+// ROUTE 7 to increment quantity of the product
 router.post("/incrementQuantity", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.body; // product id
-    
+
     const user = await User.findById(userId);
 
-    const item = user.cartItems.find(item => item.id === id);
-    console.log(item.id)
+    const item = user.cartItems.find((item) => item.id === id);
+    console.log(item.id);
     if (!item) {
-      return res.status(404).json({ success: false, message: "Item not found in cart" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Item not found in cart" });
     }
-      user.markModified("cartItems"); 
+    user.markModified("cartItems");
     item.quantity += 1;
     // console.log(user)
     await user.save();
@@ -242,7 +251,7 @@ router.post("/incrementQuantity", fetchuser, async (req, res) => {
   }
 });
 
-// Route 8 to decrement quantity of the product  
+// Route 8 to decrement quantity of the product
 router.post("/decrementQuantity", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -250,16 +259,18 @@ router.post("/decrementQuantity", fetchuser, async (req, res) => {
 
     const user = await User.findById(userId);
 
-    const item = user.cartItems.find(item => item.id === id);
-    console.log(item.id)
+    const item = user.cartItems.find((item) => item.id === id);
+    console.log(item.id);
     if (!item) {
-      return res.status(404).json({ success: false, message: "Item not found in cart" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Item not found in cart" });
     }
 
     if (item.quantity > 1) {
       item.quantity -= 1;
     }
-   user.markModified("cartItems");
+    user.markModified("cartItems");
     await user.save();
 
     res.json({ success: true, cartItems: user.cartItems });
@@ -340,17 +351,161 @@ router.put("/updateProfile", fetchuser, async (req, res) => {
 router.post("/addorderedproducts", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log("user "+userId)
-    const {orderedProducts} = req.body; // product object sent from frontend
-    console.log(req.body)
+    console.log("user " + userId);
+    const { orderedProducts } = req.body; // product object sent from frontend
+    console.log(req.body);
     const user = await User.findById(userId);
 
-    user.orderedProducts.push(...orderedProducts)
+    user.orderedProducts.push(...orderedProducts);
     await user.save();
 
-    res.json({ success: true});
+    res.json({ success: true });
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
+  }
+});
+
+// helper functions
+function tellPurpose(purpose, res, user) {
+  res.send({
+    purpose,
+    userId: user._id,
+    success: true,
+  });
+}
+
+router.post("/generate-otp", async (req, res) => {
+  try {
+    const { userId, identifier, channel, purpose } = req.body;
+
+    if (!userId || !identifier || !channel || !purpose) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields",
+      });
+    }
+
+    /* ---------- GENERATE 6-DIGIT OTP ---------- */
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    /* ---------- HASH OTP ---------- */
+    const salt = await bcrypt.genSalt(10);
+    const otpHash = await bcrypt.hash(otp, salt);
+
+    /* ---------- SET EXPIRY (5 MINUTES) ---------- */
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    /* ---------- SAVE TO DATABASE ---------- */
+    const otpRecord = await OTP.findOneAndUpdate(
+      { userId, purpose }, // ensure one OTP per purpose
+      {
+        userId,
+        identifier,
+        channel,
+        purpose,
+        otpHash,
+        expiresAt,
+        attempts: 0,
+      },
+      { upsert: true, new: true },
+    );
+
+    /* ---------- LOG OTP ---------- */
+    console.log(`OTP for ${identifier}: ${otp}`);
+    const formattedPhone = identifier.replace("+", "");
+    console.log(formattedPhone);
+    // await sendOtpSMS(formattedPhone, otp);
+    await sendOtpEmail(identifier, otp);
+
+    res.json({
+      success: true,
+      message: "OTP generated and stored",
+      otpId: otpRecord._id,
+    });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Internal Server Error");
+  }
+});
+router.post("/verifyOtp", async (req, res) => {
+   let success = false;
+  try {
+    console.log("Hello")
+    const { userId, otp,purpose } = req.body;
+    if (!userId || !otp || !purpose) {
+  return res.status(400).json({ success, error: "Missing fields" });
+}
+   
+    let otpRecord
+    if (userId && otp && purpose) {
+      otpRecord = await OTP.findOne({ userId ,purpose});
+    
+      if(!otpRecord){
+        res.status(400).json({success,error:"OTP not found"})
+      }
+        // check expiry
+      if (otpRecord.expiresAt < new Date()) {
+        await OTP.deleteOne({ _id: otpRecord._id });
+        return res.status(400).json({ success, error: "OTP expired" });
+      }
+    }
+
+    // compare OTP
+    const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
+
+    if (!isMatch) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
+      return res.status(400).json({ success, error: "Invalid OTP" });
+    }
+
+    // OTP correct → prevent user expiry
+    await User.updateOne({ _id: userId }, { $unset: { expiresAt: "" } });
+
+    const data = {
+      user: {
+        id: userId,
+      },
+    };
+    await otpRecord.deleteOne({ _id: otpRecord._id });
+    const authtoken = jwt.sign(data, JWT_SECRET);
+    success = true
+    res.json({ success, token: authtoken });
+  } catch (ex) {
+    res.status(500).json({success,error:"Internal Server error"});
+  }
+});
+
+module.exports = router;
+
+router.post("/getOtpTimer", async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const otpRecord = await OTP.findOne({ userId });
+    const now = new Date();
+    const remainingTime = otpRecord.expiresAt - now;
+    res.json({
+      success: true,
+      remainingTime: remainingTime > 0 ? remainingTime : 0,
+    });
+  } catch (ex) {
+    res.status(500).json({success,error:"Internal Server error"});
+  }
+});
+
+router.post("/deleteOTP", async (req, res) => {
+      let success = false; 
+  try {
+
+    const { userId } = req.body;
+    console.log("userId",userId)
+    const result = await OTP.deleteOne({ userId });
+    if (result.deletedCount > 0) {
+      success = true;
+    }
+    res.json({ success });
+  } catch (ex) {
+    res.status(400).json({ success });
   }
 });
