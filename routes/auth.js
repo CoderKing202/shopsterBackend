@@ -429,22 +429,22 @@ router.post("/generate-otp", async (req, res) => {
   }
 });
 router.post("/verifyOtp", async (req, res) => {
-   let success = false;
+  let success = false;
   try {
     console.log("Hello")
-    const { userId, otp,purpose } = req.body;
+    const { userId, otp, purpose } = req.body;
     if (!userId || !otp || !purpose) {
-  return res.status(400).json({ success, error: "Missing fields" });
-}
-   
+      return res.status(400).json({ success, error: "Missing fields" });
+    }
+
     let otpRecord
     if (userId && otp && purpose) {
-      otpRecord = await OTP.findOne({ userId ,purpose});
-    
-      if(!otpRecord){
-        res.status(400).json({success,error:"OTP not found"})
+      otpRecord = await OTP.findOne({ userId, purpose });
+
+      if (!otpRecord) {
+        res.status(400).json({ success, error: "OTP not found" })
       }
-        // check expiry
+      // check expiry
       if (otpRecord.expiresAt < new Date()) {
         await OTP.deleteOne({ _id: otpRecord._id });
         return res.status(400).json({ success, error: "OTP expired" });
@@ -473,7 +473,7 @@ router.post("/verifyOtp", async (req, res) => {
     success = true
     res.json({ success, token: authtoken });
   } catch (ex) {
-    res.status(500).json({success,error:"Internal Server error"});
+    res.status(500).json({ success, error: "Internal Server error" });
   }
 });
 
@@ -490,16 +490,16 @@ router.post("/getOtpTimer", async (req, res) => {
       remainingTime: remainingTime > 0 ? remainingTime : 0,
     });
   } catch (ex) {
-    res.status(500).json({success,error:"Internal Server error"});
+    res.status(500).json({ success, error: "Internal Server error" });
   }
 });
 
 router.post("/deleteOTP", async (req, res) => {
-      let success = false; 
+  let success = false;
   try {
 
     const { userId } = req.body;
-    console.log("userId",userId)
+    console.log("userId", userId)
     const result = await OTP.deleteOne({ userId });
     if (result.deletedCount > 0) {
       success = true;
@@ -509,3 +509,55 @@ router.post("/deleteOTP", async (req, res) => {
     res.status(400).json({ success });
   }
 });
+
+router.get("/getUserIdbyEmail", async (req, res) => {
+  const { email } = req.query
+  let success = false
+  if (!email) {
+    res.status(400).json({ success, error: "Email not sent" })
+  }
+  try {
+
+    const user = await User.findOne({ email })
+    success = true
+    console.log(user.id)
+    res.json({ success, userId: user.id })
+  }
+  catch (ex) {
+    res.status(500).json({ success, error: "Internal Error" })
+  }
+
+})
+
+router.post("/resetPassword", fetchuser,async (req, res) => {
+  const { newPassword } = req.body
+  let success = false
+  const userId = req.user.id
+  if(!password)
+    res.status(200).json({success,error:"Please fill the full details"})
+  try {
+    const user = await User.findOne({ id: userId })
+    console.log(user.id)
+    //bcrypt
+    const salt = await bcrypt.genSalt(10);
+    const secPass = await bcrypt.hash(newPassword, salt);
+    const passwordCompare = await bcrypt.compare(user.password,secPass)
+    if(!passwordCompare){
+      return res.status(500).json({ 
+        success,error:"Please enter new Password"
+      })
+    }
+    await User.updateOne(
+      {id:userId},{$set:{password:secPass}}
+    )
+    success = true
+    res.json({
+      success,
+    })
+  }
+  catch (ex) {
+    return res.status(500).json({
+      success,error:"Internal Server error"
+    })
+  }
+})
