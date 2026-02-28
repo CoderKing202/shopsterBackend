@@ -376,16 +376,31 @@ function tellPurpose(purpose, res, user) {
 }
 
 router.post("/generate-otp", async (req, res) => {
+  let success = false;
+  console.log("Tello");
   try {
     const { userId, identifier, channel, purpose } = req.body;
 
     if (!userId || !identifier || !channel || !purpose) {
       return res.status(400).json({
-        success: false,
+        success,
         error: "Missing required fields",
       });
     }
-
+    const user = await User.findOne({ _id: userId });
+    if (user) {
+      delete user.expiresAt; // 🔥 prevent re-addinguser.otpGeneratedTimes++;
+      user.otpGeneratedTimes++;
+      await user.save();
+      if (user.otpGeneratedTimes >= 7) {
+        user.otpGeneratedTimes = 0;
+        await user.save();
+        return res.status(500).json({
+          success,
+          error: "OTPgenlimitExceed",
+        });
+      }
+    }
     /* ---------- GENERATE 6-DIGIT OTP ---------- */
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -394,7 +409,7 @@ router.post("/generate-otp", async (req, res) => {
     const otpHash = await bcrypt.hash(otp, salt);
 
     /* ---------- SET EXPIRY (5 MINUTES) ---------- */
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 1 * 60 * 1000);
 
     /* ---------- SAVE TO DATABASE ---------- */
     const otpRecord = await OTP.findOneAndUpdate(
@@ -416,33 +431,34 @@ router.post("/generate-otp", async (req, res) => {
     const formattedPhone = identifier.replace("+", "");
     console.log(formattedPhone);
     // await sendOtpSMS(formattedPhone, otp);
-    await sendOtpEmail(identifier, otp);
-
+    // await sendOtpEmail(identifier, otp,purpose);
+    success = true;
     res.json({
-      success: true,
+      success,
       message: "OTP generated and stored",
       otpId: otpRecord._id,
     });
   } catch (error) {
     console.error(error.message);
-    res.status(500).send("Internal Server Error");
+    res
+      .status(500)
+      .json({ success, error: "could not generate OTP due to server error" });
   }
 });
 router.post("/verifyOtp", async (req, res) => {
   let success = false;
   try {
-    console.log("Hello")
     const { userId, otp, purpose } = req.body;
     if (!userId || !otp || !purpose) {
       return res.status(400).json({ success, error: "Missing fields" });
     }
 
-    let otpRecord
+    let otpRecord;
     if (userId && otp && purpose) {
       otpRecord = await OTP.findOne({ userId, purpose });
 
       if (!otpRecord) {
-        res.status(400).json({ success, error: "OTP not found" })
+        return res.status(400).json({ success, error: "OTP not found" });
       }
       // check expiry
       if (otpRecord.expiresAt < new Date()) {
@@ -457,11 +473,29 @@ router.post("/verifyOtp", async (req, res) => {
     if (!isMatch) {
       otpRecord.attempts += 1;
       await otpRecord.save();
-      return res.status(400).json({ success, error: "Invalid OTP" });
+      if (otpRecord.attempts >= otpRecord.maxAttempts) {
+        await otpRecord.deleteOne({ _id: otpRecord._id });
+        return res.status(500).json({
+          success,
+          error: "noMoreAttempts",
+        });
+      }
+      return res
+        .status(500)
+        .json({ success, error: "wrongOtp", attempts: otpRecord.attempts });
     }
 
     // OTP correct → prevent user expiry
-    await User.updateOne({ _id: userId }, { $unset: { expiresAt: "" } });
+    const user = await User.findById(userId);
+
+    if (user) {
+      user.expiresAt = undefined; // remove field
+      user.otpGeneratedTimes = 0; // update field
+      await user.save();
+    }
+    console.log("Hello");
+    const check = await User.findById(userId);
+    console.log("After unset:", check.expiresAt);
 
     const data = {
       user: {
@@ -470,16 +504,16 @@ router.post("/verifyOtp", async (req, res) => {
     };
     await otpRecord.deleteOne({ _id: otpRecord._id });
     const authtoken = jwt.sign(data, JWT_SECRET);
-    success = true
-    res.json({ success, token: authtoken });
+
+    success = true;
+    return res.json({ success, token: authtoken });
   } catch (ex) {
-    res.status(500).json({ success, error: "Internal Server error" });
+    return res.status(500).json({ success, error: "Internal Server error" });
   }
 });
 
-module.exports = router;
-
 router.post("/getOtpTimer", async (req, res) => {
+  let success = false;
   try {
     const { userId } = req.body;
     const otpRecord = await OTP.findOne({ userId });
@@ -497,9 +531,8 @@ router.post("/getOtpTimer", async (req, res) => {
 router.post("/deleteOTP", async (req, res) => {
   let success = false;
   try {
-
     const { userId } = req.body;
-    console.log("userId", userId)
+    console.log("userId", userId);
     const result = await OTP.deleteOne({ userId });
     if (result.deletedCount > 0) {
       success = true;
@@ -511,53 +544,85 @@ router.post("/deleteOTP", async (req, res) => {
 });
 
 router.get("/getUserIdbyEmail", async (req, res) => {
-  const { email } = req.query
-  let success = false
+  const { email } = req.query;
+  let success = false;
   if (!email) {
-    res.status(400).json({ success, error: "Email not sent" })
+    res.status(400).json({ success, error: "Email not sent" });
   }
   try {
-
-    const user = await User.findOne({ email })
-    success = true
-    console.log(user.id)
-    res.json({ success, userId: user.id })
+    const user = await User.findOne({
+      email,
+      expiresAt: { $exists: false },
+    });
+    if (!user) {
+      res.json({
+        success: false,
+        error: "Email is not registered",
+      });
+    }
+    success = true;
+    // console.log(user.id);
+    res.json({ success, userId: user.id });
+  } catch (ex) {
+    res.status(500).json({ success, error: "Internal Error" });
   }
-  catch (ex) {
-    res.status(500).json({ success, error: "Internal Error" })
+});
+
+router.post("/resetPassword", fetchuser, async (req, res) => {
+  const { newPassword } = req.body;
+  let success = false;
+  const userId = req.user.id;
+  if (!newPassword) {
+    res.status(200).json({ success, error: "Please fill the full details" });
   }
-
-})
-
-router.post("/resetPassword", fetchuser,async (req, res) => {
-  const { newPassword } = req.body
-  let success = false
-  const userId = req.user.id
-  if(!password)
-    res.status(200).json({success,error:"Please fill the full details"})
   try {
-    const user = await User.findOne({ id: userId })
-    console.log(user.id)
+    const user = await User.findOne({ _id: userId });
+    console.log(user);
     //bcrypt
+
+    const passwordCompare = await bcrypt.compare(newPassword, user.password);
+    if (passwordCompare) {
+      return res.status(500).json({
+        success,
+        error: "Please enter new Password",
+      });
+    }
     const salt = await bcrypt.genSalt(10);
     const secPass = await bcrypt.hash(newPassword, salt);
-    const passwordCompare = await bcrypt.compare(user.password,secPass)
-    if(!passwordCompare){
-      return res.status(500).json({ 
-        success,error:"Please enter new Password"
-      })
-    }
-    await User.updateOne(
-      {id:userId},{$set:{password:secPass}}
-    )
-    success = true
+    await User.updateOne({ _id: userId }, { $set: { password: secPass } });
+    success = true;
     res.json({
       success,
-    })
-  }
-  catch (ex) {
+    });
+  } catch (ex) {
     return res.status(500).json({
-      success,error:"Internal Server error"
-    })
+      success,
+      error: "Internal Server error",
+    });
   }
-})
+});
+
+router.post("/resetUserAttempt", async (req, res) => {
+  const { userId } = req.body;
+  let success = false;
+  try {
+    const user = await User.findOne({ _id: userId });
+    if (!user) {
+      return res.status(500).json({
+        success,
+        error: "User not found",
+      });
+    } else {
+      user.otpGeneratedTimes = 0;
+      delete user.expiresAt; // 🔥 prevent re-addinguser.otpGeneratedTimes++;
+
+      await user.save();
+    }
+  } catch (ex) {
+    success = true;
+    res.status(500).json({
+      success,
+    });
+  }
+});
+module.exports = router;

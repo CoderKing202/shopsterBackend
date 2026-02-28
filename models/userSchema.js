@@ -61,6 +61,11 @@ const userSchema = new mongoose.Schema({
     type: Array,
     default: [],
   },
+  otpGeneratedTimes:{
+    type: Number,
+    default:0
+  }
+  
 });
 
 /* TTL index: auto-delete when expiresAt passes */

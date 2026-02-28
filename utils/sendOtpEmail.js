@@ -61,11 +61,56 @@ const brevo = new BrevoClient({
   apiKey: process.env.BREVO_API_KEY,
 });
 
-const sendOtpEmail = async (to, otp) => {
+const sendOtpEmail = async (to, otp, purpose) => {
   try {
+    let subject = "";
+    let textContent = "";
+
+    switch (purpose) {
+      case "login":
+        subject = "🔐 Login Verification - Shopster";
+        textContent = `You're trying to log in to Shopster.
+
+Your OTP is: ${otp}
+
+⏳ This code will expire in 5 minutes.
+If this wasn't you, please ignore this email.`;
+        break;
+
+      case "register":
+        subject = "🎉 Welcome to Shopster - Verify Your Email";
+        textContent = `Welcome to Shopster!
+
+To complete your registration, use this OTP:
+
+👉 ${otp}
+
+⏳ Valid for 5 minutes.
+
+Happy shopping! 🛍️`;
+        break;
+
+      case "forgotPassword":
+        subject = "🔑 Reset Your Password - Shopster";
+        textContent = `We received a request to reset your password.
+
+Use this OTP to continue:
+
+👉 ${otp}
+
+⏳ This code expires in 5 minutes.
+
+If you didn’t request this, you can safely ignore this email.`;
+        break;
+
+      default:
+        subject = "Shopster OTP Verification";
+        textContent = `Your OTP is ${otp}. It expires in 5 minutes.`;
+    }
+
     const result = await brevo.transactionalEmails.sendTransacEmail({
-      subject: "Shopster OTP Verification",
-      textContent: `Your Shopster OTP is ${otp}. It expires in 5 minutes.`,
+      subject,
+      textContent,
       sender: {
         name: "Shopster",
         email: process.env.EMAIL_FROM,
