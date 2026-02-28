@@ -10,7 +10,7 @@ app.use(cors())
 app.use(express.json())// to get req.body we need this middleware
 
 app.use('/api/auth',require('./routes/auth'))
-
+app.use('/api/orders',require('./routes/orders'))
 
 app.listen(process.env.PORT, () => {
   console.log(`Shopster backend listening on port ${port}`)
