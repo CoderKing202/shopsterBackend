@@ -144,12 +144,13 @@ router.post("/addCartItem", fetchuser, async (req, res) => {
     const userId = req.user.id;
     const item = req.body; // product object sent from frontend
 
-    const user = await User.findById(userId);
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $push: { cartItems: item } },
+      { new: true },
+    );
 
-    user.cartItems.push(item);
-    await user.save();
-
-    res.json({ success: true, cartItems: user.cartItems });
+    res.json({ success: true, cartItems: updatedUser.cartItems });
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
@@ -162,13 +163,13 @@ router.post("/removeCartItem", fetchuser, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.body; // product id
 
-    const user = await User.findById(userId);
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { cartItems: { id: id } } },
+      { new: true },
+    );
 
-    user.cartItems = user.cartItems.filter((item) => item.id !== id);
-
-    await user.save();
-
-    res.json({ success: true, cartItems: user.cartItems });
+    res.json({ success: true, cartItems: updatedUser.cartItems });
   } catch (error) {
     console.error(error.message);
     res.status(500).send("Internal Server Error");
@@ -203,16 +204,17 @@ router.post("/resetCartItems", fetchuser, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const user = await User.findById(userId);
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { cartItems: [] } },
+      { new: true },
+    );
 
     if (!user) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
-
-    user.cartItems = [];
-    await user.save();
 
     res.json({
       success: true,
@@ -230,19 +232,17 @@ router.post("/incrementQuantity", fetchuser, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.body; // product id
 
-    const user = await User.findById(userId);
+    const user = await User.findOneAndUpdate(
+      { _id: userId, "cartItems.id": id },
+      { $inc: { "cartItems.$.quantity": 1 } },
+      { new: true },
+    );
 
-    const item = user.cartItems.find((item) => item.id === id);
-    console.log(item.id);
-    if (!item) {
+    if (!user) {
       return res
         .status(404)
-        .json({ success: false, message: "Item not found in cart" });
+        .json({ success: false, message: "Item not found" });
     }
-    user.markModified("cartItems");
-    item.quantity += 1;
-    // console.log(user)
-    await user.save();
 
     res.json({ success: true, cartItems: user.cartItems });
   } catch (error) {
@@ -257,21 +257,18 @@ router.post("/decrementQuantity", fetchuser, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.body; // product id
 
-    const user = await User.findById(userId);
+    const user = await User.findOneAndUpdate(
+      { _id: userId, "cartItems.id": id, "cartItems.quantity": { $gt: 1 } },
+      { $inc: { "cartItems.$.quantity": -1 } },
+      { new: true },
+    );
 
-    const item = user.cartItems.find((item) => item.id === id);
-    console.log(item.id);
-    if (!item) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Item not found in cart" });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found or quantity already 1",
+      });
     }
-
-    if (item.quantity > 1) {
-      item.quantity -= 1;
-    }
-    user.markModified("cartItems");
-    await user.save();
 
     res.json({ success: true, cartItems: user.cartItems });
   } catch (error) {
@@ -286,30 +283,26 @@ router.put("/updateProfile", fetchuser, async (req, res) => {
     const userId = req.user.id;
     const { name, email, password, phoneNumber } = req.body;
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, msg: "User not found" });
-    }
+    let updateFields = {};
 
     /* ---------- UPDATE NAME ---------- */
     if (name) {
-      user.name = name;
+      updateFields.name = name;
     }
 
     /* ---------- UPDATE EMAIL ---------- */
     if (email) {
-      // Optional: prevent duplicate emails
       const emailExists = await User.findOne({ email });
       if (emailExists && emailExists._id.toString() !== userId) {
         return res.json({ success: false, msg: "Email already in use" });
       }
-      user.email = email;
+      updateFields.email = email;
     }
 
     /* ---------- UPDATE PHONE NUMBER ---------- */
     if (phoneNumber) {
-      // Validate E.164 format (+<country><number>)
       const phoneRegex = /^\+[1-9]\d{6,14}$/;
+
       if (!phoneRegex.test(phoneNumber)) {
         return res.json({
           success: false,
@@ -317,7 +310,6 @@ router.put("/updateProfile", fetchuser, async (req, res) => {
         });
       }
 
-      // Prevent duplicate phone numbers
       const phoneExists = await User.findOne({ phoneNumber });
       if (phoneExists && phoneExists._id.toString() !== userId) {
         return res.json({
@@ -326,20 +318,30 @@ router.put("/updateProfile", fetchuser, async (req, res) => {
         });
       }
 
-      user.phoneNumber = phoneNumber;
+      updateFields.phoneNumber = phoneNumber;
     }
 
     /* ---------- UPDATE PASSWORD ---------- */
     if (password) {
       const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(password, salt);
+      updateFields.password = await bcrypt.hash(password, salt);
     }
 
-    await user.save();
+    // 🔥 FINAL UPDATE (single query)
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updateFields },
+      { new: true },
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, msg: "User not found" });
+    }
 
     res.json({
       success: true,
       msg: "Profile updated successfully",
+      user: updatedUser,
     });
   } catch (error) {
     console.error(error.message);
@@ -354,11 +356,11 @@ router.post("/addorderedproducts", fetchuser, async (req, res) => {
     console.log("user " + userId);
     const { orderedProducts } = req.body; // product object sent from frontend
     console.log(req.body);
-    const user = await User.findById(userId);
-
-    user.orderedProducts.push(...orderedProducts);
-    await user.save();
-
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $push: { orderedProducts: { $each: orderedProducts } } },
+      { new: true },
+    );
     res.json({ success: true });
   } catch (error) {
     console.error(error.message);
@@ -387,19 +389,26 @@ router.post("/generate-otp", async (req, res) => {
         error: "Missing required fields",
       });
     }
-    const user = await User.findOne({ _id: userId });
-    if (user) {
-      delete user.expiresAt; // 🔥 prevent re-addinguser.otpGeneratedTimes++;
-      user.otpGeneratedTimes++;
-      await user.save();
-      if (user.otpGeneratedTimes >= 7) {
-        user.otpGeneratedTimes = 0;
-        await user.save();
-        return res.status(500).json({
-          success,
-          error: "OTPgenlimitExceed",
-        });
-      }
+    const user = await User.findByIdAndUpdate(
+      userId, // ✔ pass only id
+      {
+       
+        $inc: { otpGeneratedTimes: 1 },
+      },
+      { new: true },
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false });
+    }
+
+    if (user.otpGeneratedTimes >= 7) {
+      await User.updateOne({ _id: userId }, { $set: { otpGeneratedTimes: 0 } });
+
+      return res.status(500).json({
+        success,
+        error: "OTPgenlimitExceed",
+      });
     }
     /* ---------- GENERATE 6-DIGIT OTP ---------- */
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -409,7 +418,7 @@ router.post("/generate-otp", async (req, res) => {
     const otpHash = await bcrypt.hash(otp, salt);
 
     /* ---------- SET EXPIRY (5 MINUTES) ---------- */
-    const expiresAt = new Date(Date.now() + 1 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     /* ---------- SAVE TO DATABASE ---------- */
     const otpRecord = await OTP.findOneAndUpdate(
@@ -431,7 +440,7 @@ router.post("/generate-otp", async (req, res) => {
     const formattedPhone = identifier.replace("+", "");
     console.log(formattedPhone);
     // await sendOtpSMS(formattedPhone, otp);
-    // await sendOtpEmail(identifier, otp,purpose);
+    await sendOtpEmail(identifier, otp,purpose);
     success = true;
     res.json({
       success,
@@ -485,15 +494,15 @@ router.post("/verifyOtp", async (req, res) => {
         .json({ success, error: "wrongOtp", attempts: otpRecord.attempts });
     }
 
-    // OTP correct → prevent user expiry
-    const user = await User.findById(userId);
+    const user = await User.findByIdAndUpdate(
+      userId,
+      {
+        $unset: { expiresAt: "" },
+        $set: { otpGeneratedTimes: 0 },
+      },
+      { new: true },
+    );
 
-    if (user) {
-      user.expiresAt = undefined; // remove field
-      user.otpGeneratedTimes = 0; // update field
-      await user.save();
-    }
-    console.log("Hello");
     const check = await User.findById(userId);
     console.log("After unset:", check.expiresAt);
 
@@ -605,23 +614,31 @@ router.post("/resetPassword", fetchuser, async (req, res) => {
 router.post("/resetUserAttempt", async (req, res) => {
   const { userId } = req.body;
   let success = false;
+
   try {
-    const user = await User.findOne({ _id: userId });
-    if (!user) {
-      return res.status(500).json({
+    const result = await User.updateOne(
+      { _id: userId },
+      {
+        $set: { otpGeneratedTimes: 0 },
+        $unset: { expiresAt: "" },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
         success,
         error: "User not found",
       });
-    } else {
-      user.otpGeneratedTimes = 0;
-      delete user.expiresAt; // 🔥 prevent re-addinguser.otpGeneratedTimes++;
-
-      await user.save();
     }
-  } catch (ex) {
+
     success = true;
+    res.json({ success });
+
+  } catch (ex) {
+    console.error(ex);
     res.status(500).json({
       success,
+      error: "Internal Server Error",
     });
   }
 });

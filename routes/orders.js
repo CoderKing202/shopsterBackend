@@ -23,15 +23,17 @@ console.log("id",process.env.RAZORPAY_KEY_ID)
 router.post("/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
+    
 
     const order = await instance.orders.create({
-      amount: amount * 100, // ₹ → paise
+      amount: parseInt(amount * 100), // ₹ → paise
       currency: "INR",
       receipt: "order_" + Date.now(),
     });
-
+    
     res.json({ success: true, order });
   } catch (err) {
+    console.log(err)
     res.status(500).json({ success: false });
   }
 });
